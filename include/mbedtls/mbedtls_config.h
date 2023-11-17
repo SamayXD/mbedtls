@@ -742,6 +742,9 @@
  * contexts and therefore is a compatibility break for applications that access
  * fields of a mbedtls_ecdh_context structure directly. See also
  * MBEDTLS_ECDH_LEGACY_CONTEXT in include/mbedtls/ecdh.h.
+ *
+ * The Everest code is provided under the Apache 2.0 license only; therefore enabling this
+ * option is not compatible with taking the library under the GPL v2.0-or-later license.
  */
 //#define MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED
 
@@ -4080,7 +4083,7 @@
  * \def MBEDTLS_SSL_MAX_EARLY_DATA_SIZE
  *
  * The default maximum amount of 0-RTT data. See the documentation of
- * \c mbedtls_ssl_tls13_conf_max_early_data_size() for more information.
+ * \c mbedtls_ssl_conf_max_early_data_size() for more information.
  *
  * It must be positive and smaller than UINT32_MAX.
  *

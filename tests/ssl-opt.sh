@@ -113,6 +113,7 @@ EXCLUDE='^$'
 SHOW_TEST_NUMBER=0
 LIST_TESTS=0
 RUN_TEST_NUMBER=''
+RUN_TEST_SUITE=''
 
 PRESERVE_LOGS=0
 
@@ -137,6 +138,8 @@ print_usage() {
     printf "     --port     \tTCP/UDP port (default: randomish 1xxxx)\n"
     printf "     --proxy-port\tTCP/UDP proxy port (default: randomish 2xxxx)\n"
     printf "     --seed     \tInteger seed value to use for this test run\n"
+    printf "     --test-suite\tOnly matching test suites are executed\n"
+    printf "                 \t(comma-separated, e.g. 'ssl-opt,tls13-compat')\n\n"
 }
 
 get_options() {
@@ -174,6 +177,9 @@ get_options() {
                 ;;
             --seed)
                 shift; SEED="$1"
+                ;;
+            --test-suite)
+                shift; RUN_TEST_SUITE="$1"
                 ;;
             -h|--help)
                 print_usage
@@ -360,6 +366,34 @@ requires_ciphersuite_enabled() {
         *" $1 "*) :;;
         *) SKIP_NEXT="YES";;
     esac
+}
+
+requires_cipher_enabled() {
+    KEY_TYPE=$1
+    MODE=${2:-}
+    if is_config_enabled MBEDTLS_USE_PSA_CRYPTO; then
+        case "$KEY_TYPE" in
+            CHACHA20)
+                requires_config_enabled PSA_WANT_ALG_CHACHA20_POLY1305
+                requires_config_enabled PSA_WANT_KEY_TYPE_CHACHA20
+                ;;
+            *)
+                requires_config_enabled PSA_WANT_ALG_${MODE}
+                requires_config_enabled PSA_WANT_KEY_TYPE_${KEY_TYPE}
+                ;;
+        esac
+    else
+        case "$KEY_TYPE" in
+            CHACHA20)
+                requires_config_enabled MBEDTLS_CHACHA20_C
+                requires_config_enabled MBEDTLS_CHACHAPOLY_C
+                ;;
+            *)
+                requires_config_enabled MBEDTLS_${MODE}_C
+                requires_config_enabled MBEDTLS_${KEY_TYPE}_C
+                ;;
+        esac
+    fi
 }
 
 # Automatically detect required features based on command line parameters.
@@ -883,7 +917,7 @@ record_outcome() {
     if [ -n "$MBEDTLS_TEST_OUTCOME_FILE" ]; then
         printf '%s;%s;%s;%s;%s;%s\n' \
                "$MBEDTLS_TEST_PLATFORM" "$MBEDTLS_TEST_CONFIGURATION" \
-               "ssl-opt" "$NAME" \
+               "${TEST_SUITE_NAME:-ssl-opt}" "$NAME" \
                "$1" "${2-}" \
                >>"$MBEDTLS_TEST_OUTCOME_FILE"
     fi
@@ -1513,7 +1547,7 @@ do_run_test_once() {
 # $1 and $2 contain the server and client command lines, respectively.
 #
 # Note: this function only provides some guess about TLS version by simply
-#       looking at the server/client command lines. Even thought this works
+#       looking at the server/client command lines. Even though this works
 #       for the sake of tests' filtering (especially in conjunction with the
 #       detect_required_features() function), it does NOT guarantee that the
 #       result is accurate. It does not check other conditions, such as:
@@ -1590,6 +1624,13 @@ run_test() {
         return
     fi
 
+    # Use ssl-opt as default test suite name. Also see record_outcome function
+    if is_excluded_test_suite "${TEST_SUITE_NAME:-ssl-opt}"; then
+        # Do not skip next test and skip current test.
+        SKIP_NEXT="NO"
+        return
+    fi
+
     print_name "$NAME"
 
     # Do we only run numbered tests?
@@ -1626,7 +1667,7 @@ run_test() {
         requires_config_enabled MBEDTLS_SSL_PROTO_DTLS
     fi
 
-    # Check if we are trying to use an external tool wich does not support ECDH
+    # Check if we are trying to use an external tool which does not support ECDH
     EXT_WO_ECDH=$(use_ext_tool_without_ecdh_support "$SRV_CMD" "$CLI_CMD")
 
     # Guess the TLS version which is going to be used
@@ -1836,6 +1877,21 @@ else
         esac
     }
 fi
+
+# Filter tests according to TEST_SUITE_NAME
+is_excluded_test_suite () {
+    if [ -n "$RUN_TEST_SUITE" ]
+    then
+        case ",$RUN_TEST_SUITE," in
+            *",$1,"*) false;;
+            *) true;;
+        esac
+    else
+        false
+    fi
+
+}
+
 
 if [ "$LIST_TESTS" -eq 0 ];then
 
@@ -2062,6 +2118,11 @@ run_test    "key size: TLS-ECDHE-ECDSA-WITH-AES-128-CCM-8" \
             -c "Key size is 128"
 
 requires_config_enabled MBEDTLS_X509_CRT_PARSE_C
+requires_config_enabled MBEDTLS_MD_CAN_MD5
+# server5.key.enc is in PEM format and AES-256-CBC crypted. Unfortunately PEM
+# module does not support PSA dispatching so we need builtin support.
+requires_config_enabled MBEDTLS_CIPHER_MODE_CBC
+requires_config_enabled MBEDTLS_AES_C
 requires_hash_alg SHA_256
 run_test    "TLS: password protected client key" \
             "$P_SRV force_version=tls12 auth_mode=required" \
@@ -2069,6 +2130,11 @@ run_test    "TLS: password protected client key" \
             0
 
 requires_config_enabled MBEDTLS_X509_CRT_PARSE_C
+requires_config_enabled MBEDTLS_MD_CAN_MD5
+# server5.key.enc is in PEM format and AES-256-CBC crypted. Unfortunately PEM
+# module does not support PSA dispatching so we need builtin support.
+requires_config_enabled MBEDTLS_CIPHER_MODE_CBC
+requires_config_enabled MBEDTLS_AES_C
 requires_hash_alg SHA_256
 run_test    "TLS: password protected server key" \
             "$P_SRV crt_file=data_files/server5.crt key_file=data_files/server5.key.enc key_pwd=PolarSSLTest" \
@@ -2077,6 +2143,11 @@ run_test    "TLS: password protected server key" \
 
 requires_config_enabled MBEDTLS_X509_CRT_PARSE_C
 requires_config_enabled MBEDTLS_RSA_C
+requires_config_enabled MBEDTLS_MD_CAN_MD5
+# server5.key.enc is in PEM format and AES-256-CBC crypted. Unfortunately PEM
+# module does not support PSA dispatching so we need builtin support.
+requires_config_enabled MBEDTLS_CIPHER_MODE_CBC
+requires_config_enabled MBEDTLS_AES_C
 requires_hash_alg SHA_256
 run_test    "TLS: password protected server key, two certificates" \
             "$P_SRV force_version=tls12\
@@ -3805,6 +3876,7 @@ run_test    "Session resume using tickets: openssl client" \
             -s "session successfully restored from ticket" \
             -s "a session has been resumed"
 
+requires_cipher_enabled "AES" "GCM"
 run_test    "Session resume using tickets: AES-128-GCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=AES-128-GCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3819,6 +3891,7 @@ run_test    "Session resume using tickets: AES-128-GCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "AES" "GCM"
 run_test    "Session resume using tickets: AES-192-GCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=AES-192-GCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3833,6 +3906,7 @@ run_test    "Session resume using tickets: AES-192-GCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "AES" "CCM"
 run_test    "Session resume using tickets: AES-128-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=AES-128-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3847,6 +3921,7 @@ run_test    "Session resume using tickets: AES-128-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "AES" "CCM"
 run_test    "Session resume using tickets: AES-192-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=AES-192-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3861,6 +3936,7 @@ run_test    "Session resume using tickets: AES-192-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "AES" "CCM"
 run_test    "Session resume using tickets: AES-256-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=AES-256-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3875,6 +3951,7 @@ run_test    "Session resume using tickets: AES-256-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "CAMELLIA" "CCM"
 run_test    "Session resume using tickets: CAMELLIA-128-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=CAMELLIA-128-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3889,6 +3966,7 @@ run_test    "Session resume using tickets: CAMELLIA-128-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "CAMELLIA" "CCM"
 run_test    "Session resume using tickets: CAMELLIA-192-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=CAMELLIA-192-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3903,6 +3981,7 @@ run_test    "Session resume using tickets: CAMELLIA-192-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "CAMELLIA" "CCM"
 run_test    "Session resume using tickets: CAMELLIA-256-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=CAMELLIA-256-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3917,6 +3996,7 @@ run_test    "Session resume using tickets: CAMELLIA-256-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "GCM"
 run_test    "Session resume using tickets: ARIA-128-GCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-128-GCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3931,6 +4011,7 @@ run_test    "Session resume using tickets: ARIA-128-GCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "GCM"
 run_test    "Session resume using tickets: ARIA-192-GCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-192-GCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3945,6 +4026,7 @@ run_test    "Session resume using tickets: ARIA-192-GCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "GCM"
 run_test    "Session resume using tickets: ARIA-256-GCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-256-GCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3959,6 +4041,7 @@ run_test    "Session resume using tickets: ARIA-256-GCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "CCM"
 run_test    "Session resume using tickets: ARIA-128-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-128-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3973,6 +4056,7 @@ run_test    "Session resume using tickets: ARIA-128-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "CCM"
 run_test    "Session resume using tickets: ARIA-192-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-192-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -3987,6 +4071,7 @@ run_test    "Session resume using tickets: ARIA-192-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "ARIA" "CCM"
 run_test    "Session resume using tickets: ARIA-256-CCM" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=ARIA-256-CCM" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \
@@ -4001,6 +4086,7 @@ run_test    "Session resume using tickets: ARIA-256-CCM" \
             -s "a session has been resumed" \
             -c "a session has been resumed"
 
+requires_cipher_enabled "CHACHA20"
 run_test    "Session resume using tickets: CHACHA20-POLY1305" \
             "$P_SRV debug_level=3 tickets=1 ticket_aead=CHACHA20-POLY1305" \
             "$P_CLI force_version=tls12 debug_level=3 tickets=1 reconnect=1" \

@@ -249,40 +249,13 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
  * counter (8) + header (5) + IV(16) + MAC (16-48) + padding (0-256).
  */
 
-/* Some internal helpers to determine which keys are availble for CBC mode. */
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-#if defined(PSA_WANT_ALG_CBC_NO_PADDING)
-#if defined(PSA_WANT_KEY_TYPE_AES)
-#define MBEDTLS_SSL_HAVE_AES_CBC
-#endif
-#if defined(PSA_WANT_KEY_TYPE_ARIA)
-#define MBEDTLS_SSL_HAVE_ARIA_CBC
-#endif
-#if defined(PSA_WANT_KEY_TYPE_CAMELLIA)
-#define MBEDTLS_SSL_HAVE_CAMELLIA_CBC
-#endif
-#endif /* PSA_WANT_ALG_CBC_NO_PADDING */
-#else /* MBEDTLS_USE_PSA_CRYPTO */
-#if defined(MBEDTLS_CIPHER_MODE_CBC)
-#if defined(MEDTLS_AES_C)
-#define MBEDTLS_SSL_HAVE_AES_CBC
-#endif
-#if defined(MEDTLS_ARIA_C)
-#define MBEDTLS_SSL_HAVE_ARIA_CBC
-#endif
-#if defined(MEDTLS_CAMELLIA_C)
-#define MBEDTLS_SSL_HAVE_CAMELLIA_CBC
-#endif
-#endif /* MBEDTLS_CIPHER_MODE_CBC */
-#endif /* MBEDTLS_USE_PSA_CRYPTO*/
-
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2)
 
 /* This macro determines whether CBC is supported. */
-#if defined(MBEDTLS_CIPHER_MODE_CBC) &&                               \
-    (defined(MBEDTLS_AES_C)      ||                                  \
-    defined(MBEDTLS_CAMELLIA_C) ||                                  \
-    defined(MBEDTLS_ARIA_C)     ||                                  \
+#if defined(MBEDTLS_SSL_HAVE_CBC)      &&                                  \
+    (defined(MBEDTLS_SSL_HAVE_AES)     ||                                  \
+    defined(MBEDTLS_SSL_HAVE_CAMELLIA) ||                                  \
+    defined(MBEDTLS_SSL_HAVE_ARIA)     ||                                  \
     defined(MBEDTLS_DES_C))
 #define MBEDTLS_SSL_SOME_SUITES_USE_CBC
 #endif
@@ -326,7 +299,7 @@ uint32_t mbedtls_ssl_get_extension_mask(unsigned int extension_type);
 #define MBEDTLS_SSL_MAC_ADD                 16
 #endif
 
-#if defined(MBEDTLS_CIPHER_MODE_CBC)
+#if defined(MBEDTLS_SSL_HAVE_CBC)
 #define MBEDTLS_SSL_PADDING_ADD            256
 #else
 #define MBEDTLS_SSL_PADDING_ADD              0
@@ -2798,6 +2771,26 @@ static inline unsigned int mbedtls_ssl_session_get_ticket_flags(
 {
     return session->ticket_flags &
            (flags & MBEDTLS_SSL_TLS1_3_TICKET_FLAGS_MASK);
+}
+
+static inline unsigned int mbedtls_ssl_session_check_ticket_flags(
+    mbedtls_ssl_session *session, unsigned int flags)
+{
+    return mbedtls_ssl_session_get_ticket_flags(session, flags) == 0;
+}
+
+static inline unsigned int mbedtls_ssl_session_ticket_allow_psk(
+    mbedtls_ssl_session *session)
+{
+    return !mbedtls_ssl_session_check_ticket_flags(session,
+                                                   MBEDTLS_SSL_TLS1_3_TICKET_ALLOW_PSK_RESUMPTION);
+}
+
+static inline unsigned int mbedtls_ssl_session_ticket_allow_psk_ephemeral(
+    mbedtls_ssl_session *session)
+{
+    return !mbedtls_ssl_session_check_ticket_flags(session,
+                                                   MBEDTLS_SSL_TLS1_3_TICKET_ALLOW_PSK_EPHEMERAL_RESUMPTION);
 }
 
 static inline void mbedtls_ssl_session_set_ticket_flags(

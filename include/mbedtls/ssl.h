@@ -600,6 +600,26 @@
 
 #define MBEDTLS_TLS_EXT_RENEGOTIATION_INFO      0xFF01
 
+/* Some internal helpers to determine which keys are availble. */
+#if (!defined(MBEDTLS_USE_PSA_CRYPTO) && defined(MBEDTLS_AES_C)) || \
+    (defined(MBEDTLS_USE_PSA_CRYPTO) && defined(PSA_WANT_KEY_TYPE_AES))
+#define MBEDTLS_SSL_HAVE_AES
+#endif
+#if (!defined(MBEDTLS_USE_PSA_CRYPTO) && defined(MBEDTLS_CAMELLIA_C)) || \
+    (defined(MBEDTLS_USE_PSA_CRYPTO) && defined(PSA_WANT_KEY_TYPE_CAMELLIA))
+#define MBEDTLS_SSL_HAVE_CAMELLIA
+#endif
+#if (!defined(MBEDTLS_USE_PSA_CRYPTO) && defined(MBEDTLS_ARIA_C)) || \
+    (defined(MBEDTLS_USE_PSA_CRYPTO) && defined(PSA_WANT_KEY_TYPE_ARIA))
+#define MBEDTLS_SSL_HAVE_ARIA
+#endif
+
+/* Some internal helpers to determine which operation modes are availble. */
+#if (!defined(MBEDTLS_USE_PSA_CRYPTO) && defined(MBEDTLS_CIPHER_MODE_CBC)) || \
+    (defined(MBEDTLS_USE_PSA_CRYPTO) && defined(PSA_WANT_ALG_CBC_NO_PADDING))
+#define MBEDTLS_SSL_HAVE_CBC
+#endif
+
 /*
  * Size defines
  */
@@ -613,7 +633,7 @@
  */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3) && \
     defined(MBEDTLS_SSL_SESSION_TICKETS) && \
-    defined(MBEDTLS_AES_C) && defined(MBEDTLS_GCM_C) && \
+    defined(MBEDTLS_SSL_HAVE_AES) && defined(MBEDTLS_SSL_HAVE_GCM) && \
     defined(MBEDTLS_MD_CAN_SHA384)
 #define MBEDTLS_PSK_MAX_LEN 48 /* 384 bits */
 #else
@@ -2000,8 +2020,8 @@ void mbedtls_ssl_conf_authmode(mbedtls_ssl_config *conf, int authmode);
  * \warning This interface is experimental and may change without notice.
  *
  */
-void mbedtls_ssl_tls13_conf_early_data(mbedtls_ssl_config *conf,
-                                       int early_data_enabled);
+void mbedtls_ssl_conf_early_data(mbedtls_ssl_config *conf,
+                                 int early_data_enabled);
 
 #if defined(MBEDTLS_SSL_SRV_C)
 /**
@@ -2027,7 +2047,7 @@ void mbedtls_ssl_tls13_conf_early_data(mbedtls_ssl_config *conf,
  * \warning This interface is experimental and may change without notice.
  *
  */
-void mbedtls_ssl_tls13_conf_max_early_data_size(
+void mbedtls_ssl_conf_max_early_data_size(
     mbedtls_ssl_config *conf, uint32_t max_early_data_size);
 #endif /* MBEDTLS_SSL_SRV_C */
 
